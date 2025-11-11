@@ -1,0 +1,17 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Model files (optional)
+model/*.h5
+model/*.keras
+
+# System / IDE files
+.DS_Store
+.vscode/
+.idea/
