@@ -1,105 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Digit Recognition AI</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Digit AI</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; background: #121212; color: white; margin-top: 50px; }
-        .container { background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
-        canvas { border: 4px solid #3498db; background-color: white; cursor: crosshair; border-radius: 8px; }
-        .controls { margin-top: 15px; }
-        button { padding: 10px 25px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; transition: 0.3s; margin: 5px; }
-        #clear-btn { background: #e74c3c; color: white; }
-        #clear-btn:hover { background: #c0392b; }
-        .result-area { margin-top: 20px; padding: 15px; border-top: 1px solid #333; }
-        #prediction { font-size: 48px; font-weight: bold; color: #2ecc71; }
-        #confidence { color: #bdc3c7; }
+        body { background: #121212; color: white; text-align: center; font-family: sans-serif; }
+        canvas { background: white; border: 5px solid #3498db; cursor: crosshair; margin: 20px; }
+        .res { font-size: 24px; color: #2ecc71; }
     </style>
 </head>
 <body>
-
-    <div class="container">
-        <h2>Handwritten Digit Recognition</h2>
-        <canvas id="canvas" width="280" height="280"></canvas>
-        
-        <div class="controls">
-            <button id="clear-btn">Clear Canvas</button>
-        </div>
-
-        <div class="result-area">
-            <div>Predicted Digit:</div>
-            <div id="prediction">-</div>
-            <div id="confidence">Confidence: 0%</div>
-        </div>
-    </div>
+    <h2>Draw a Digit (0-9)</h2>
+    <canvas id="canvas" width="280" height="280"></canvas><br>
+    <button onclick="clearCanvas()" style="padding:10px 20px;">Clear</button>
+    <div class="res">Prediction: <span id="digit">-</span> (<span id="conf">0</span>%)</div>
 
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const clearBtn = document.getElementById('clear-btn');
-        const predEl = document.getElementById('prediction');
-        const confEl = document.getElementById('confidence');
-
         let drawing = false;
 
-        // Set up drawing styles
-        ctx.lineWidth = 15; // Thick lines help the CNN "see" the digit better
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 15; ctx.lineCap = 'round'; ctx.strokeStyle = 'black';
+        const clearCanvas = () => { ctx.fillStyle = "white"; ctx.fillRect(0,0,280,280); };
+        window.onload = clearCanvas;
 
-        // Mouse Events
-        canvas.addEventListener('mousedown', () => drawing = true);
-        canvas.addEventListener('mouseup', () => { drawing = false; ctx.beginPath(); sendImage(); });
-        canvas.addEventListener('mousemove', draw);
-
-        // Touch Events for Mobile
-        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); drawing = true; });
-        canvas.addEventListener('touchend', (e) => { e.preventDefault(); drawing = false; ctx.beginPath(); sendImage(); });
-        canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            const touch = e.touches[0];
-            const rect = canvas.getBoundingClientRect();
-            draw({ clientX: touch.clientX, clientY: touch.clientY });
-        });
-
-        function draw(e) {
+        canvas.onmousedown = () => drawing = true;
+        canvas.onmouseup = () => { drawing = false; ctx.beginPath(); predict(); };
+        canvas.onmousemove = (e) => {
             if (!drawing) return;
-            const rect = canvas.getBoundingClientRect();
-            ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-        }
+            const r = canvas.getBoundingClientRect();
+            ctx.lineTo(e.clientX - r.left, e.clientY - r.top);
+            ctx.stroke(); ctx.beginPath(); ctx.moveTo(e.clientX - r.left, e.clientY - r.top);
+        };
 
-        function clearCanvas() {
-            ctx.fillStyle = "white"; // Ensure background is pure white
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            predEl.innerText = "-";
-            confEl.innerText = "Confidence: 0%";
-        }
-
-        function sendImage() {
-            const imageData = canvas.toDataURL('image/png');
-            
-            fetch('/predict', {
+        async function predict() {
+            const res = await fetch('/predict', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: imageData })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.digit !== "") {
-                    predEl.innerText = data.digit;
-                    confEl.innerText = `Confidence: ${data.confidence}%`;
-                }
-            })
-            .catch(err => console.error('Error:', err));
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({image: canvas.toDataURL('image/png')})
+            });
+            const data = await res.json();
+            document.getElementById('digit').innerText = data.digit;
+            document.getElementById('conf').innerText = data.confidence;
         }
-
-        clearBtn.addEventListener('click', clearCanvas);
-        window.onload = clearCanvas; // Initialize with white background
     </script>
 </body>
 </html>
