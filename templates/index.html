@@ -1,145 +1,105 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Digit Scratchpad</title>
-
-<style>
-body {
-  margin: 0;
-  background: #0f172a;
-  color: #e5e7eb;
-  font-family: system-ui;
-  display: flex;
-  justify-content: center;
-}
-
-.app {
-  max-width: 600px;
-  width: 100%;
-  padding: 20px;
-}
-
-h1 {
-  text-align: center;
-  color: #e5e7eb;
-}
-
-canvas {
-  width: 100%;
-  height: 300px;
-  background: black;
-  border-radius: 12px;
-  touch-action: none;
-}
-
-.controls {
-  display: flex;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-button, input {
-  padding: 10px;
-  border-radius: 8px;
-  border: none;
-  font-size: 1rem;
-}
-
-button {
-  background: #e5e7eb;
-  font-weight: bold;
-}
-
-.output {
-  margin-top: 12px;
-  text-align: center;
-  font-size: 1.4rem;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digit Recognition AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; background: #121212; color: white; margin-top: 50px; }
+        .container { background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+        canvas { border: 4px solid #3498db; background-color: white; cursor: crosshair; border-radius: 8px; }
+        .controls { margin-top: 15px; }
+        button { padding: 10px 25px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; transition: 0.3s; margin: 5px; }
+        #clear-btn { background: #e74c3c; color: white; }
+        #clear-btn:hover { background: #c0392b; }
+        .result-area { margin-top: 20px; padding: 15px; border-top: 1px solid #333; }
+        #prediction { font-size: 48px; font-weight: bold; color: #2ecc71; }
+        #confidence { color: #bdc3c7; }
+    </style>
 </head>
-
 <body>
-<div class="app">
-<h1>AI Digit Scratchpad</h1>
 
-<canvas id="canvas"></canvas>
+    <div class="container">
+        <h2>Handwritten Digit Recognition</h2>
+        <canvas id="canvas" width="280" height="280"></canvas>
+        
+        <div class="controls">
+            <button id="clear-btn">Clear Canvas</button>
+        </div>
 
-<div class="controls">
-  <input type="range" min="6" max="14" value="10" id="brush">
-  <button onclick="clearCanvas()">Clear</button>
-  <button onclick="predict()">Predict</button>
-</div>
+        <div class="result-area">
+            <div>Predicted Digit:</div>
+            <div id="prediction">-</div>
+            <div id="confidence">Confidence: 0%</div>
+        </div>
+    </div>
 
-<div class="output" id="output">Digit: </div>
-</div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const clearBtn = document.getElementById('clear-btn');
+        const predEl = document.getElementById('prediction');
+        const confEl = document.getElementById('confidence');
 
-<script>
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+        let drawing = false;
 
-let drawing = false;
-let lastX = null;
-let lastY = null;
-let brushSize = 10;
+        // Set up drawing styles
+        ctx.lineWidth = 15; // Thick lines help the CNN "see" the digit better
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'black';
 
-function resize() {
-  canvas.width = canvas.offsetWidth;
-  canvas.height = canvas.offsetHeight;
-  ctx.fillStyle = "black";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-}
-resize();
-window.onresize = resize;
+        // Mouse Events
+        canvas.addEventListener('mousedown', () => drawing = true);
+        canvas.addEventListener('mouseup', () => { drawing = false; ctx.beginPath(); sendImage(); });
+        canvas.addEventListener('mousemove', draw);
 
-canvas.addEventListener("pointerdown", e => {
-  drawing = true;
-  lastX = e.offsetX;
-  lastY = e.offsetY;
-});
+        // Touch Events for Mobile
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); drawing = true; });
+        canvas.addEventListener('touchend', (e) => { e.preventDefault(); drawing = false; ctx.beginPath(); sendImage(); });
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            draw({ clientX: touch.clientX, clientY: touch.clientY });
+        });
 
-canvas.addEventListener("pointerup", () => drawing = false);
-canvas.addEventListener("pointerleave", () => drawing = false);
-canvas.addEventListener("pointermove", draw);
+        function draw(e) {
+            if (!drawing) return;
+            const rect = canvas.getBoundingClientRect();
+            ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+        }
 
-function draw(e) {
-  if (!drawing) return;
+        function clearCanvas() {
+            ctx.fillStyle = "white"; // Ensure background is pure white
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            predEl.innerText = "-";
+            confEl.innerText = "Confidence: 0%";
+        }
 
-  ctx.strokeStyle = "white";
-  ctx.lineWidth = brushSize;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
+        function sendImage() {
+            const imageData = canvas.toDataURL('image/png');
+            
+            fetch('/predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.digit !== "") {
+                    predEl.innerText = data.digit;
+                    confEl.innerText = `Confidence: ${data.confidence}%`;
+                }
+            })
+            .catch(err => console.error('Error:', err));
+        }
 
-  ctx.beginPath();
-  ctx.moveTo(lastX, lastY);
-  ctx.lineTo(e.offsetX, e.offsetY);
-  ctx.stroke();
-
-  lastX = e.offsetX;
-  lastY = e.offsetY;
-}
-
-document.getElementById("brush").oninput = e => {
-  brushSize = e.target.value;
-};
-
-function clearCanvas() {
-  resize();
-  document.getElementById("output").innerText = "Digit:";
-}
-
-function predict() {
-  fetch("/predict", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ image: canvas.toDataURL() })
-  })
-  .then(r => r.json())
-  .then(d => {
-    document.getElementById("output").innerText =
-      `Digit: ${d.digit} (${d.confidence}%)`;
-  });
-}
-</script>
+        clearBtn.addEventListener('click', clearCanvas);
+        window.onload = clearCanvas; // Initialize with white background
+    </script>
 </body>
 </html>
