@@ -1,76 +1,87 @@
 from flask import Flask, render_template, request, jsonify
-from tensorflow.keras.models import load_model
 import numpy as np
-import cv2, base64, os
+import cv2
+import base64
+from scipy import ndimage
+from tensorflow.keras.models import load_model
 
-# ==================================================
-# Flask App Initialization
-# ==================================================
 app = Flask(__name__)
+model = load_model("model/digit_model.h5")
 
-# ==================================================
-# Model Loading with Auto-Detection (.h5 or .keras)
-# ==================================================
-model_path_h5 = 'model/digit_model.h5'
-model_path_keras = 'model/digit_model.keras'
+def get_best_shift(img):
+    """Calculates the center of mass to center the digit perfectly."""
+    cy, cx = ndimage.center_of_mass(img)
+    rows, cols = img.shape
+    shiftx = np.round(cols/2.0 - cx).astype(int)
+    shifty = np.round(rows/2.0 - cy).astype(int)
+    return shiftx, shifty
 
-if os.path.exists(model_path_h5):
-    print("✅ Loading model from:", model_path_h5)
-    model = load_model(model_path_h5)
-elif os.path.exists(model_path_keras):
-    print("✅ Loading model from:", model_path_keras)
-    model = load_model(model_path_keras)
-else:
-    raise FileNotFoundError("❌ Model file not found! Please train and save your model first.")
+def shift(img, sx, sy):
+    """Applies the shift to the image."""
+    rows, cols = img.shape
+    M = np.float32([[1, 0, sx], [0, 1, sy]])
+    return cv2.warpAffine(img, M, (cols, rows))
 
-# ==================================================
-# Home Route
-# ==================================================
-@app.route('/')
+def preprocess_digit(img):
+    # 1. Thicken the drawing (dilatation helps if the user used a thin brush)
+    kernel = np.ones((3,3), np.uint8)
+    img = cv2.dilate(img, kernel, iterations=1)
+
+    # 2. Thresholding and finding the digit contour
+    _, thresh = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if not contours: return None
+    
+    c = max(contours, key=cv2.contourArea)
+    x, y, w, h = cv2.boundingRect(c)
+    digit = thresh[y:y+h, x:x+w]
+
+    # 3. Resize to 20x20 while maintaining aspect ratio (Standard MNIST)
+    if w > h:
+        new_w, new_h = 20, int(h * (20 / w))
+    else:
+        new_h, new_w = 20, int(w * (20 / h))
+    digit = cv2.resize(digit, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    # 4. Place 20x20 digit inside 28x28 padding
+    padded = np.zeros((28, 28), dtype=np.uint8)
+    padded[(28-new_h)//2 : (28-new_h)//2+new_h, (28-new_w)//2 : (28-new_w)//2+new_w] = digit
+
+    # 5. Final centering using Center of Mass
+    sx, sy = get_best_shift(padded)
+    padded = shift(padded, sx, sy)
+
+    # 6. Normalize for model input
+    return padded.astype("float32").reshape(1, 28, 28, 1) / 255.0
+
+@app.route("/")
 def home():
-    return render_template('index.html')
+    return render_template("index.html")
 
-# ==================================================
-# Prediction Route
-# ==================================================
-@app.route('/predict', methods=['POST'])
+@app.route("/predict", methods=["POST"])
 def predict():
     try:
-        # Get image from request
-        data = request.get_json().get('image', None)
-        if not data:
-            return jsonify({'error': 'No image data received'}), 400
+        data = request.get_json()["image"].split(",")[1]
+        img_bytes = base64.b64decode(data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        
+        # CANVAS CHECK: If your canvas is white-background/black-ink, 
+        # use cv2.bitwise_not to make it white-ink/black-background for MNIST
+        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        img = cv2.bitwise_not(img) 
 
-        # Decode base64 image
-        image_data = base64.b64decode(data.split(',')[1])
-        np_arr = np.frombuffer(image_data, np.uint8)
-        img = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
+        processed = preprocess_digit(img)
+        if processed is None: 
+            return jsonify({"digit": "None", "confidence": 0})
 
-        # Validate image shape
-        if img is None:
-            return jsonify({'error': 'Invalid image format'}), 400
-
-        # Preprocess for model
-        img = cv2.resize(img, (28, 28))
-        img = img.reshape(1, 28, 28, 1).astype('float32') / 255.0
-
-        # Predict
-        probs = model.predict(img)[0]
-        prediction = int(np.argmax(probs))
-
-        # Return as JSON
+        preds = model.predict(processed, verbose=0)[0]
         return jsonify({
-            'prediction': prediction,
-            'probabilities': [float(p) for p in probs]
+            "digit": int(np.argmax(preds)),
+            "confidence": round(float(np.max(preds)) * 100, 2)
         })
-
     except Exception as e:
-        print("❌ Error during prediction:", e)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)})
 
-# ==================================================
-# Run Flask Server
-# ==================================================
 if __name__ == "__main__":
-    print("🚀 Starting Flask server... Open http://127.0.0.1:5000 in your browser.")
-    app.run(debug=True)
+    app.run(port=5000, debug=True)

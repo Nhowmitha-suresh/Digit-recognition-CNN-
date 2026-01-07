@@ -1,26 +1,145 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Digit Recognition (CNN)</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Digit Scratchpad</title>
+
+<style>
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #e5e7eb;
+  font-family: system-ui;
+  display: flex;
+  justify-content: center;
+}
+
+.app {
+  max-width: 600px;
+  width: 100%;
+  padding: 20px;
+}
+
+h1 {
+  text-align: center;
+  color: #e5e7eb;
+}
+
+canvas {
+  width: 100%;
+  height: 300px;
+  background: black;
+  border-radius: 12px;
+  touch-action: none;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+button, input {
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 1rem;
+}
+
+button {
+  background: #e5e7eb;
+  font-weight: bold;
+}
+
+.output {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 1.4rem;
+}
+</style>
 </head>
+
 <body>
-  <div class="container">
-    <h1>🧠 Digit Recognition</h1>
-    <p>Draw any digit (0–9) below and click <b>Predict</b></p>
+<div class="app">
+<h1>AI Digit Scratchpad</h1>
 
-    <canvas id="canvas" width="280" height="280"></canvas>
+<canvas id="canvas"></canvas>
 
-    <div class="buttons">
-      <button id="clearBtn">🧹 Clear</button>
-      <button id="predictBtn">🔮 Predict</button>
-    </div>
+<div class="controls">
+  <input type="range" min="6" max="14" value="10" id="brush">
+  <button onclick="clearCanvas()">Clear</button>
+  <button onclick="predict()">Predict</button>
+</div>
 
-    <h2 id="result">Predicted Digit: _</h2>
-  </div>
+<div class="output" id="output">Digit: </div>
+</div>
 
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let drawing = false;
+let lastX = null;
+let lastY = null;
+let brushSize = 10;
+
+function resize() {
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  ctx.fillStyle = "black";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+resize();
+window.onresize = resize;
+
+canvas.addEventListener("pointerdown", e => {
+  drawing = true;
+  lastX = e.offsetX;
+  lastY = e.offsetY;
+});
+
+canvas.addEventListener("pointerup", () => drawing = false);
+canvas.addEventListener("pointerleave", () => drawing = false);
+canvas.addEventListener("pointermove", draw);
+
+function draw(e) {
+  if (!drawing) return;
+
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = brushSize;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  ctx.beginPath();
+  ctx.moveTo(lastX, lastY);
+  ctx.lineTo(e.offsetX, e.offsetY);
+  ctx.stroke();
+
+  lastX = e.offsetX;
+  lastY = e.offsetY;
+}
+
+document.getElementById("brush").oninput = e => {
+  brushSize = e.target.value;
+};
+
+function clearCanvas() {
+  resize();
+  document.getElementById("output").innerText = "Digit:";
+}
+
+function predict() {
+  fetch("/predict", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ image: canvas.toDataURL() })
+  })
+  .then(r => r.json())
+  .then(d => {
+    document.getElementById("output").innerText =
+      `Digit: ${d.digit} (${d.confidence}%)`;
+  });
+}
+</script>
 </body>
 </html>
