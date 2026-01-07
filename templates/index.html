@@ -1,46 +1,69 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Digit AI</title>
+    <meta charset="UTF-8">
+    <title>AI Digit Recognizer Pro</title>
     <style>
-        body { background: #121212; color: white; text-align: center; font-family: sans-serif; }
-        canvas { background: white; border: 5px solid #3498db; cursor: crosshair; margin: 20px; }
-        .res { font-size: 24px; color: #2ecc71; }
+        :root { --bg: #0f172a; --panel: rgba(30, 41, 59, 0.7); --accent: #38bdf8; }
+        body { background: var(--bg); color: white; font-family: 'Inter', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .glass-panel { background: var(--panel); backdrop-filter: blur(10px); padding: 2rem; border-radius: 24px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); text-align: center; }
+        canvas { background: white; border-radius: 12px; cursor: crosshair; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); margin: 20px 0; touch-action: none; }
+        .btn-group { display: flex; gap: 10px; justify-content: center; }
+        button { background: var(--accent); color: var(--bg); border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button:hover { filter: brightness(1.1); transform: translateY(-2px); }
+        .res-box { margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; }
+        #digit { font-size: 4rem; color: var(--accent); margin: 10px 0; }
     </style>
 </head>
 <body>
-    <h2>Draw a Digit (0-9)</h2>
-    <canvas id="canvas" width="280" height="280"></canvas><br>
-    <button onclick="clearCanvas()" style="padding:10px 20px;">Clear</button>
-    <div class="res">Prediction: <span id="digit">-</span> (<span id="conf">0</span>%)</div>
+    <div class="glass-panel">
+        <h1>Digit Recognizer <span style="color:var(--accent)">AI</span></h1>
+        <canvas id="canvas" width="280" height="280"></canvas>
+        <div class="btn-group">
+            <button onclick="clearAll()" style="background:#ef4444; color:white;">Clear</button>
+            <button onclick="predict()">Recognize</button>
+        </div>
+        <div class="res-box">
+            <p>I think this is a...</p>
+            <div id="digit">-</div>
+            <p id="conf">Confidence: 0.00%</p>
+        </div>
+    </div>
 
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         let drawing = false;
 
-        ctx.lineWidth = 15; ctx.lineCap = 'round'; ctx.strokeStyle = 'black';
-        const clearCanvas = () => { ctx.fillStyle = "white"; ctx.fillRect(0,0,280,280); };
-        window.onload = clearCanvas;
+        ctx.lineWidth = 18; ctx.lineCap = 'round'; ctx.strokeStyle = 'black';
+        const init = () => { ctx.fillStyle = "white"; ctx.fillRect(0,0,280,280); };
+        init();
 
-        canvas.onmousedown = () => drawing = true;
-        canvas.onmouseup = () => { drawing = false; ctx.beginPath(); predict(); };
-        canvas.onmousemove = (e) => {
-            if (!drawing) return;
+        const getPos = (e) => {
             const r = canvas.getBoundingClientRect();
-            ctx.lineTo(e.clientX - r.left, e.clientY - r.top);
-            ctx.stroke(); ctx.beginPath(); ctx.moveTo(e.clientX - r.left, e.clientY - r.top);
+            return [ (e.clientX || e.touches[0].clientX) - r.left, (e.clientY || e.touches[0].clientY) - r.top ];
         };
 
+        const start = (e) => { drawing = true; ctx.beginPath(); const [x,y] = getPos(e); ctx.moveTo(x,y); };
+        const move = (e) => { if(!drawing) return; const [x,y] = getPos(e); ctx.lineTo(x,y); ctx.stroke(); };
+        const stop = () => { drawing = false; };
+
+        canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', stop);
+        canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', move);
+
+        function clearAll() { init(); document.getElementById('digit').innerText = '-'; document.getElementById('conf').innerText = 'Confidence: 0.00%'; }
+
         async function predict() {
-            const res = await fetch('/predict', {
+            const blob = canvas.toDataURL('image/png');
+            const resp = await fetch('/predict', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({image: canvas.toDataURL('image/png')})
+                body: JSON.stringify({image: blob})
             });
-            const data = await res.json();
+            const data = await resp.json();
             document.getElementById('digit').innerText = data.digit;
-            document.getElementById('conf').innerText = data.confidence;
+            document.getElementById('conf').innerText = `Confidence: ${data.conf}%`;
         }
     </script>
 </body>
